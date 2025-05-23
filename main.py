@@ -21,7 +21,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.route("/")
 def health_check():
-    return "✅ Gmail Add-on backend is live!"
+    return "Gmail Add-on backend is live!"
 
 def get_email_thread(profile_id, latest_email):
     messages_response = supabase.table("messages") \
@@ -43,7 +43,9 @@ Thread:
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
     )
-    return "yes" in response.choices[0].message["content"].strip().lower()
+    decision = response.choices[0].message["content"].strip().lower()
+    print("OpenAI client check response:", decision)
+    return "yes" in decision
 
 def extract_client_profile(full_thread):
     prompt = f"""Analyze the following email thread and extract the client's:
@@ -51,12 +53,14 @@ def extract_client_profile(full_thread):
 - Timeline
 - Concerns
 
-Return a JSON object like this:
+Return a JSON object exactly like this:
 {{
   "preferences": "...",
   "timeline": "...",
   "concerns": "..."
 }}
+
+Do not include any explanation.
 
 Thread:
 {full_thread}
@@ -115,17 +119,25 @@ def get_or_create_profile():
 
             # Step 5: Get full thread and use OpenAI
             full_thread = get_email_thread(profile_id, latest_email)
+            print("Full email thread:\n", full_thread)
 
             if is_client_email(full_thread):
-                structured = extract_client_profile(full_thread)
-                supabase.table("profiles").update({
-                    "preferences": structured.get("preferences", ""),
-                    "timeline": structured.get("timeline", ""),
-                    "concerns": structured.get("concerns", ""),
-                    "updated_at": datetime.utcnow().isoformat()
-                }).eq("id", profile_id).execute()
+                try:
+                    structured = extract_client_profile(full_thread)
+                    print("Extracted profile from OpenAI:", structured)
+
+                    update_result = supabase.table("profiles").update({
+                        "preferences": structured.get("preferences", ""),
+                        "timeline": structured.get("timeline", ""),
+                        "concerns": structured.get("concerns", ""),
+                        "updated_at": datetime.utcnow().isoformat()
+                    }).eq("id", profile_id).execute()
+
+                    print("Supabase update result:", update_result)
+                except Exception as e:
+                    print("Failed to parse or update profile:", e)
             else:
-                # Non-client email: update timestamp only
+                print("🔕 Message identified as NOT from a client.")
                 supabase.table("profiles").update({
                     "updated_at": datetime.utcnow().isoformat()
                 }).eq("id", profile_id).execute()
@@ -143,6 +155,7 @@ def get_or_create_profile():
         })
 
     except Exception as e:
+        print("Top-level error in /get-or-create-profile:", e)
         return jsonify({"error": str(e)}), 500
 
 @app.route("/update-notes", methods=["POST"])
@@ -169,4 +182,5 @@ def update_notes():
         return jsonify({"status": "success"})
 
     except Exception as e:
+        print("Error in /update-notes:", e)
         return jsonify({"error": str(e)}), 500
