@@ -37,7 +37,7 @@ def get_email_thread(profile_id, latest_email):
     return full_thread
 
 def is_client_email(full_thread):
-    prompt = f"""Determine if the following email thread is a conversation with a client.
+    prompt = f"""You are a real estate agent. Determine if the following email thread is a conversation with a client or a potentially interested client.
 Only respond with "Yes" or "No".
 
 Thread:
