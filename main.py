@@ -27,15 +27,15 @@ def is_client_email(thread_text):
     return "yes" in response.choices[0].message.content.strip().lower()
 
 def extend_profile_with_message(profile, message):
-    prompt = f("""Given the current client profile (whih may be empty) and a new message (which may be the first message sent by the client), update the client's profile.
-               Current Profile:
-               {json.dumps(profile, indent=2)}
+    prompt = f"""Given the current client profile (whih may be empty) and a new message (which may be the first message sent by the client), update the client's profile.
+    Current Profile:
+    {json.dumps(profile, indent=2)}
                
-               New Email:
-                """{message}"""
+    New Email:
+    {message}
 
-                Return updated profile in JSON.
-                """)
+    Return updated profile in JSON.
+    """
     response = openai.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
