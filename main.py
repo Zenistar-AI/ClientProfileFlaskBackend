@@ -6,22 +6,24 @@ import os
 import json
 from dotenv import load_dotenv
 
-# Load .env variables
+# Load environment variables
 load_dotenv()
 
-# Initialize Flask app and Supabase client
+# Initialize Flask and Supabase clients
 app = Flask(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-openai.api_key = OPENAI_API_KEY
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+openai.api_key = OPENAI_API_KEY
 
 @app.route("/")
 def health_check():
     return "Gmail Add-on backend is live!"
+
+# --------- HELPER FUNCTIONS ---------
 
 def get_email_thread(profile_id, latest_email):
     messages_response = supabase.table("messages") \
@@ -30,7 +32,9 @@ def get_email_thread(profile_id, latest_email):
         .order("timestamp", desc=False) \
         .execute()
     history = [msg["content"] for msg in messages_response.data]
-    return "\n\n".join(history + [latest_email])
+    full_thread = "\n\n".join(history + [latest_email])
+    print("Full email thread:\n", full_thread)
+    return full_thread
 
 def is_client_email(full_thread):
     prompt = f"""Determine if the following email thread is a conversation with a client.
@@ -45,7 +49,7 @@ Thread:
     )
     decision = response.choices[0].message.content.strip().lower()
     print("OpenAI client check response:", decision)
-    return "yes" in decision
+    return decision.startswith("yes")
 
 def extract_client_profile(full_thread):
     prompt = f"""Analyze the following email thread and extract the client's:
@@ -69,7 +73,11 @@ Thread:
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
     )
-    return json.loads(response.choices[0].message.content)
+    raw_output = response.choices[0].message.content
+    print("Raw OpenAI JSON response:\n", raw_output)
+    return json.loads(raw_output)
+
+# --------- MAIN ROUTES ---------
 
 @app.route("/get-or-create-profile", methods=["POST"])
 def get_or_create_profile():
@@ -88,6 +96,7 @@ def get_or_create_profile():
 
         # Step 2: Create if not found
         if not profile:
+            print("Creating new profile for:", email)
             insert_result = supabase.table("profiles").insert({
                 "email": email,
                 "name": "Unknown",
@@ -110,21 +119,19 @@ def get_or_create_profile():
             .execute()
 
         if not existing_messages.data:
-            # Step 4: Add message to history
+            print("New message detected. Storing...")
             supabase.table("messages").insert({
                 "profile_id": profile_id,
                 "content": latest_email,
                 "timestamp": datetime.utcnow().isoformat()
             }).execute()
 
-            # Step 5: Get full thread and use OpenAI
             full_thread = get_email_thread(profile_id, latest_email)
-            print("Full email thread:\n", full_thread)
 
             if is_client_email(full_thread):
                 try:
                     structured = extract_client_profile(full_thread)
-                    print("Extracted profile from OpenAI:", structured)
+                    print("Extracted structured data:", structured)
 
                     update_result = supabase.table("profiles").update({
                         "preferences": structured.get("preferences", ""),
@@ -133,14 +140,16 @@ def get_or_create_profile():
                         "updated_at": datetime.utcnow().isoformat()
                     }).eq("id", profile_id).execute()
 
-                    print("Supabase update result:", update_result)
+                    print("Supabase profile update result:", update_result)
                 except Exception as e:
-                    print("Failed to parse or update profile:", e)
+                    print("OpenAI profile extraction failed:", e)
             else:
                 print("Message identified as NOT from a client.")
                 supabase.table("profiles").update({
                     "updated_at": datetime.utcnow().isoformat()
                 }).eq("id", profile_id).execute()
+        else:
+            print("Duplicate message — skipping storage and analysis.")
 
         # Step 6: Return profile
         updated_result = supabase.table("profiles").select("*").eq("id", profile_id).execute()
@@ -174,6 +183,7 @@ def update_notes():
 
         profile_id = result.data[0]["id"]
 
+        print(f"Updating notes for {email}: {notes}")
         supabase.table("profiles").update({
             "notes": notes,
             "updated_at": datetime.utcnow().isoformat()
