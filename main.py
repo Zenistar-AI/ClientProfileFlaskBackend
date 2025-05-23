@@ -39,11 +39,11 @@ Only respond with "Yes" or "No".
 Thread:
 {full_thread}
 """
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
     )
-    decision = response.choices[0].message["content"].strip().lower()
+    decision = response.choices[0].message.content.strip().lower()
     print("OpenAI client check response:", decision)
     return "yes" in decision
 
@@ -65,11 +65,11 @@ Do not include any explanation.
 Thread:
 {full_thread}
 """
-    response = openai.ChatCompletion.create(
+    response = openai.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
     )
-    return json.loads(response.choices[0].message["content"])
+    return json.loads(response.choices[0].message.content)
 
 @app.route("/get-or-create-profile", methods=["POST"])
 def get_or_create_profile():
@@ -137,7 +137,7 @@ def get_or_create_profile():
                 except Exception as e:
                     print("Failed to parse or update profile:", e)
             else:
-                print("🔕 Message identified as NOT from a client.")
+                print("Message identified as NOT from a client.")
                 supabase.table("profiles").update({
                     "updated_at": datetime.utcnow().isoformat()
                 }).eq("id", profile_id).execute()
