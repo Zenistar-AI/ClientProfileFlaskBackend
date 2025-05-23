@@ -27,14 +27,22 @@ def is_client_email(thread_text):
     return "yes" in response.choices[0].message.content.strip().lower()
 
 def extend_profile_with_message(profile, message):
-    prompt = f"""Given the current client profile (whih may be empty) and a new message (which may be the first message sent by the client), update the client's profile.
+    prompt = f"""Given the current client profile (which may be empty) and a new message (which may be the first message sent by the client), update the client's profile.
+    If the client's name is mentioned in the email (e.g. "Hi, this is James"), use that as the name.
+    
     Current Profile:
     {json.dumps(profile, indent=2)}
-               
-    New Email:
-    {message}
 
-    Return updated profile in JSON.
+    New Email:
+    \"\"\"{message}\"\"\"
+
+    Return updated profile in this JSON format:
+    {{
+    "name": "...",
+    "preferences": "...",
+    "timeline": "...",
+    "concerns": "..."
+    }}
     """
     response = openai.chat.completions.create(
         model="gpt-4",
@@ -61,7 +69,7 @@ def get_or_create_profile():
         if not profile:
             profile = supabase.table("profiles").insert({
                 "email": email,
-                "name": "Unknown",
+                "name": "",
                 "preferences": "",
                 "timeline": "",
                 "concerns": "",
@@ -101,15 +109,17 @@ def get_or_create_profile():
         updated = extend_profile_with_message(latest_profile, full_thread)
 
         supabase.table("profiles").update({
+            "name": updated.get("name", profile.get("name", "")),
             "preferences": updated.get("preferences", ""),
             "timeline": updated.get("timeline", ""),
             "concerns": updated.get("concerns", ""),
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", profile_id).execute()
 
+
         final_profile = supabase.table("profiles").select("*").eq("id", profile_id).execute().data[0]
         return jsonify({
-            "name": final_profile.get("name", "Unknown"),
+            "name": final_profile.get("name", ""),
             "preferences": final_profile.get("preferences", ""),
             "timeline": final_profile.get("timeline", ""),
             "concerns": final_profile.get("concerns", ""),
